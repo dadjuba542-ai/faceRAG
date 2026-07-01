@@ -31,9 +31,8 @@ def process_single_image(image_path: str, progress_callback: Optional[Callable] 
         return result
 
     height, width = img.shape[:2]
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-    faces = face_detector.detect(img_rgb)
+    faces = face_detector.detect(img)
     if not faces:
         result["success"] = True
         result["faces_count"] = 0
@@ -72,7 +71,7 @@ def process_single_image(image_path: str, progress_callback: Optional[Callable] 
         crop_path = ""
 
         if save_crop:
-            face_crop = img_rgb[y1:y2, x1:x2]
+            face_crop = img[y1:y2, x1:x2]
             if face_crop.size > 0:
                 crop_h, crop_w = face_crop.shape[:2]
                 if crop_h > 0 and crop_w > 0:
@@ -83,7 +82,7 @@ def process_single_image(image_path: str, progress_callback: Optional[Callable] 
                                                     interpolation=cv2.INTER_AREA)
                     crop_filename = f"face_{next_faiss_id + face_count:08d}.jpg"
                     crop_path = str(config.face_crops_dir / crop_filename)
-                    cv2.imwrite(crop_path, cv2.cvtColor(face_crop_resized, cv2.COLOR_RGB2BGR),
+                    cv2.imwrite(crop_path, face_crop_resized,
                                 [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
 
         embedding = get_embedding(face)

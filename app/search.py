@@ -68,8 +68,7 @@ def detect_query_faces(image_path: str) -> List[dict]:
     img = cv2.imread(image_path)
     if img is None:
         return []
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    faces = face_detector.detect(img_rgb)
+    faces = face_detector.detect(img)
     return faces
 
 

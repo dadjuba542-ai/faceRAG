@@ -1,29 +1,24 @@
-photo_root: ""
-
-index:
-  top_k_default: 50
-  similarity_threshold: 0.35
-  embedding_dim: 512
-  faiss_index_path: "data/faiss.index"
-
 face_detection:
-  min_face_size: 60
   detection_threshold: 0.5
   enable_quality_filter: true
-
+  min_face_size: 60
+index:
+  embedding_dim: 512
+  faiss_index_path: data/faiss.index
+  similarity_threshold: 0.35
+  top_k_default: 50
+photo_root: /tmp/test_photos_real
+runtime:
+  auto_open_browser: true
+  host: 127.0.0.1
+  port: 7860
+supported_extensions:
+- .jpg
+- .jpeg
+- .png
+- .bmp
+- .webp
 thumbnail:
-  save_crop: true
   crop_size: 160
   jpeg_quality: 80
-
-runtime:
-  host: "127.0.0.1"
-  port: 7860
-  auto_open_browser: true
-
-supported_extensions:
-  - ".jpg"
-  - ".jpeg"
-  - ".png"
-  - ".bmp"
-  - ".webp"
+  save_crop: true

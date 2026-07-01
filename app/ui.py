@@ -58,28 +58,32 @@ def get_stats():
     index_status = "正常" if index_total > 0 else "空"
     db_path = config.db_path
     db_status = "正常" if db_path.exists() else "未创建"
-    return (
+    stat_lines = [
         f"当前照片目录：{photo_root}",
         f"已入库图片：{stats['image_count']:,} 张",
         f"已入库人脸：{stats['face_count']:,} 张",
         f"上次建库时间：{last_time}",
         f"索引状态：{index_status} ({index_total} 条向量)",
         f"数据库状态：{db_status}",
-    )
+    ]
+    return stat_lines, "正常" if index_total > 0 else "空"
 
 
 def select_directory(path):
     if path and os.path.isdir(path):
         config.photo_root = path
-    return "\n".join(get_stats())
+    lines, _ = get_stats()
+    return "\n".join(lines)
 
 
 def run_full_index(progress=gr.Progress()):
     if not config.photo_root or not os.path.isdir(config.photo_root):
-        yield "\n".join(get_stats()) + "\n\n请先设置有效的照片目录。"
+        lines, _ = get_stats()
+        yield "\n".join(lines), "请先设置有效的照片目录。"
         return
 
     progress(0, desc="正在扫描图片...")
+
     status_text = "正在扫描图片..."
 
     def update_progress(img_path, face_count, processed=0, total=0, total_faces=0, failed=0):
@@ -98,12 +102,14 @@ def run_full_index(progress=gr.Progress()):
 
     full_index(config.photo_root, update_progress)
     progress(1.0, desc="建库完成")
-    yield "\n".join(get_stats()) + "\n\n建库完成！"
+    lines, _ = get_stats()
+    yield "\n".join(lines), "建库完成！"
 
 
 def run_incremental_index(progress=gr.Progress()):
     if not config.photo_root or not os.path.isdir(config.photo_root):
-        yield "\n".join(get_stats()) + "\n\n请先设置有效的照片目录。"
+        lines, _ = get_stats()
+        yield "\n".join(lines), "请先设置有效的照片目录。"
         return
 
     progress(0, desc="正在扫描变更...")
@@ -115,12 +121,14 @@ def run_incremental_index(progress=gr.Progress()):
 
     incremental_index(config.photo_root, update_progress)
     progress(1.0, desc="增量更新完成")
-    yield "\n".join(get_stats()) + "\n\n增量更新完成！"
+    lines, _ = get_stats()
+    yield "\n".join(lines), "增量更新完成！"
 
 
 def run_rebuild_index(progress=gr.Progress()):
     if not config.photo_root or not os.path.isdir(config.photo_root):
-        yield "\n".join(get_stats()) + "\n\n请先设置有效的照片目录。"
+        lines, _ = get_stats()
+        yield "\n".join(lines), "请先设置有效的照片目录。"
         return
 
     progress(0, desc="正在重建...")
@@ -132,12 +140,13 @@ def run_rebuild_index(progress=gr.Progress()):
 
     rebuild_index(config.photo_root, update_progress)
     progress(1.0, desc="重建完成")
-    yield "\n".join(get_stats()) + "\n\n重建完成！"
+    lines, _ = get_stats()
+    yield "\n".join(lines), "重建完成！"
 
 
 def on_upload_query(image):
     if image is None:
-        return [], gr.State(None), "", ""
+        return [], None, "", ""
 
     temp_dir = config.temp_dir
     temp_dir.mkdir(parents=True, exist_ok=True)
@@ -173,7 +182,7 @@ def on_upload_query(image):
             face_images.append(crop_pil)
             face_data.append({"bbox": bbox, "det_score": face["det_score"], "index": i})
 
-    return face_images, gr.State(face_data if face_data else None), temp_path, ""
+    return face_images, (face_data if face_data else None), temp_path, ""
 
 
 def on_face_select(evt: gr.SelectData, face_data_state):
@@ -261,7 +270,8 @@ def run_search(query_path, selected_face, top_k, threshold):
 def create_app():
     with gr.Blocks(title="会议照片以脸搜图工具") as app:
 
-        stats_md = gr.Markdown("\n".join(get_stats()))
+        stats_md = gr.Markdown("\n".join(get_stats()[0]))
+        status_output = gr.Textbox(label="状态", lines=6, value="正在等待操作...")
 
         with gr.Tabs() as tabs:
             with gr.TabItem("首页", id=0):
@@ -281,11 +291,6 @@ def create_app():
                     index_btn = gr.Button("开始建库", variant="primary", size="lg")
                     incremental_btn = gr.Button("增量更新", variant="secondary")
                     rebuild_btn = gr.Button("重新建库", variant="stop")
-                    gr.Button("进入搜索", variant="secondary").click(
-                        fn=lambda: gr.Tabs(selected=1), outputs=[tabs]
-                    )
-
-                status_output = gr.Textbox(label="状态", lines=6)
 
                 index_btn.click(
                     fn=run_full_index,
@@ -309,14 +314,13 @@ def create_app():
                     fn=run_rebuild_index,
                     outputs=[stats_md, status_output],
                 )
-
                 select_dir_btn.click(
                     fn=select_directory,
                     inputs=dir_input,
                     outputs=[stats_md],
                 )
                 refresh_stats_btn.click(
-                    fn=lambda: "\n".join(get_stats()),
+                    fn=lambda: "\n".join(get_stats()[0]),
                     outputs=[stats_md],
                 )
 
@@ -356,10 +360,6 @@ def create_app():
                                 value=config["index"]["similarity_threshold"],
                                 step=0.05,
                             )
-                        path_keyword = gr.Textbox(
-                            label="路径关键词（可选）",
-                            placeholder="输入关键词筛选路径...",
-                        )
                         with gr.Row():
                             search_btn = gr.Button("开始搜索", variant="primary", size="lg")
 
@@ -406,6 +406,6 @@ def create_app():
 
                 log_refresh_btn.click(fn=read_logs, outputs=log_output)
 
-        app.load(fn=lambda: "\n".join(get_stats()), outputs=[stats_md])
+        app.load(fn=lambda: "\n".join(get_stats()[0]), outputs=[stats_md])
 
     return app
