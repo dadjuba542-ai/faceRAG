@@ -269,6 +269,7 @@ def run_search(query_path, selected_face, top_k, threshold):
 
 def create_app():
     with gr.Blocks(title="会议照片以脸搜图工具") as app:
+        app.queue(default_concurrency_limit=5)
 
         stats_md = gr.Markdown("\n".join(get_stats()[0]))
         status_output = gr.Textbox(label="状态", lines=6, value="正在等待操作...")
@@ -295,10 +296,14 @@ def create_app():
                 index_btn.click(
                     fn=run_full_index,
                     outputs=[stats_md, status_output],
+                    concurrency_limit=1,
+                    api_name="run_full_index",
                 )
                 incremental_btn.click(
                     fn=run_incremental_index,
                     outputs=[stats_md, status_output],
+                    concurrency_limit=1,
+                    api_name="run_incremental_index",
                 )
                 rebuild_btn.click(
                     fn=None,
@@ -313,15 +318,19 @@ def create_app():
                 ).success(
                     fn=run_rebuild_index,
                     outputs=[stats_md, status_output],
+                    concurrency_limit=1,
+                    api_name="run_rebuild_index",
                 )
                 select_dir_btn.click(
                     fn=select_directory,
                     inputs=dir_input,
                     outputs=[stats_md],
+                    api_name="select_directory",
                 )
                 refresh_stats_btn.click(
                     fn=lambda: "\n".join(get_stats()[0]),
                     outputs=[stats_md],
+                    api_name="refresh_stats",
                 )
 
             with gr.TabItem("搜索", id=1):
@@ -369,18 +378,22 @@ def create_app():
                     fn=on_upload_query,
                     inputs=query_image,
                     outputs=[face_gallery, selected_face_state, query_path_state, results_html],
+                    api_name="on_upload_query",
                 )
 
                 face_gallery.select(
                     fn=on_face_select,
                     inputs=selected_face_state,
                     outputs=selected_face_state,
+                    api_name="on_face_select",
                 )
 
                 search_btn.click(
                     fn=run_search,
                     inputs=[query_path_state, selected_face_state, top_k_input, threshold_input],
                     outputs=results_html,
+                    concurrency_limit=1,
+                    api_name="run_search",
                 )
 
             with gr.TabItem("日志", id=2):

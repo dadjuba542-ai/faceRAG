@@ -128,13 +128,17 @@ def main():
         prevent_thread_lock=True,
         share=False,
         theme="soft",
+        max_file_size="50mb",
     )
 
     try:
         while True:
             time.sleep(3600)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         logger.info("服务已停止")
+    except Exception as e:
+        logger.error(f"服务异常退出: {e}")
+        raise
 
 
 if __name__ == "__main__":
