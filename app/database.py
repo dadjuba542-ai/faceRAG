@@ -78,7 +78,7 @@ class Database:
         try:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO images
+                INSERT INTO images
                 (image_path, file_name, folder_path, file_size, modified_time,
                  file_hash, width, height, indexed_at, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
@@ -161,6 +161,35 @@ class Database:
         conn.close()
         return [dict(r) for r in rows]
 
+    def get_face_ids_by_image_path(self, image_path: str) -> List[int]:
+        conn = self._conn()
+        rows = conn.execute("""
+            SELECT f.faiss_id
+            FROM faces f
+            JOIN images i ON f.image_id = i.id
+            WHERE i.image_path = ?
+        """, (image_path,)).fetchall()
+        conn.close()
+        return [int(r["faiss_id"]) for r in rows]
+
+    def get_all_face_ids(self) -> List[int]:
+        conn = self._conn()
+        rows = conn.execute("SELECT faiss_id FROM faces ORDER BY faiss_id").fetchall()
+        conn.close()
+        return [int(r["faiss_id"]) for r in rows]
+
+    def get_orphan_face_ids(self) -> List[int]:
+        conn = self._conn()
+        rows = conn.execute("""
+            SELECT f.faiss_id
+            FROM faces f
+            LEFT JOIN images i ON f.image_id = i.id
+            WHERE i.id IS NULL
+            ORDER BY f.faiss_id
+        """).fetchall()
+        conn.close()
+        return [int(r["faiss_id"]) for r in rows]
+
     def get_stats(self) -> Dict:
         conn = self._conn()
         image_count = conn.execute(
@@ -214,6 +243,36 @@ class Database:
         conn.execute("DELETE FROM failed_images")
         conn.commit()
         conn.close()
+
+    def delete_image_and_faces(self, image_path: str):
+        conn = self._conn()
+        try:
+            cursor = conn.cursor()
+            row = cursor.execute(
+                "SELECT id FROM images WHERE image_path=?",
+                (image_path,),
+            ).fetchone()
+            if not row:
+                return
+            image_id = row["id"]
+            cursor.execute("DELETE FROM faces WHERE image_id=?", (image_id,))
+            cursor.execute("DELETE FROM images WHERE id=?", (image_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def delete_faces_by_faiss_ids(self, faiss_ids: List[int]):
+        if not faiss_ids:
+            return
+        conn = self._conn()
+        try:
+            conn.executemany(
+                "DELETE FROM faces WHERE faiss_id=?",
+                [(int(faiss_id),) for faiss_id in faiss_ids],
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def mark_deleted_images(self, deleted_paths: List[str]):
         conn = self._conn()

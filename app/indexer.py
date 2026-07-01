@@ -35,12 +35,28 @@ class Indexer:
         self.index.add_with_ids(emb, ids_arr)
         self.logger.info(f"FAISS 添加 {len(embeddings)} 条向量 (总数: {self.index.ntotal})")
 
+    def remove(self, ids: List[int]) -> int:
+        if not ids:
+            return 0
+        ids_arr = np.ascontiguousarray(np.array(ids, dtype=np.int64))
+        removed = int(self.index.remove_ids(ids_arr))
+        if removed > 0:
+            self.logger.info(f"FAISS 删除 {removed} 条向量 (总数: {self.index.ntotal})")
+        return removed
+
     def search(self, query: np.ndarray, top_k: int) -> Tuple[np.ndarray, np.ndarray]:
         if self.index.ntotal == 0:
             return np.array([]), np.array([])
         q = np.ascontiguousarray(query.reshape(1, -1), dtype=np.float32)
         distances, indices = self.index.search(q, top_k)
         return distances[0], indices[0]
+
+    def get_all_ids(self) -> List[int]:
+        if self.index.ntotal == 0:
+            return []
+        if not hasattr(self.index, "id_map"):
+            return []
+        return [int(v) for v in faiss.vector_to_array(self.index.id_map)]
 
     def save(self):
         self.index_path.parent.mkdir(parents=True, exist_ok=True)

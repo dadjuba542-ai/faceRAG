@@ -7,7 +7,7 @@ index:
   faiss_index_path: data/faiss.index
   similarity_threshold: 0.35
   top_k_default: 50
-photo_root: /tmp/test_photos_real
+photo_root: ""
 runtime:
   auto_open_browser: true
   host: 127.0.0.1

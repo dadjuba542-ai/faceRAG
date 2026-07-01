@@ -25,10 +25,10 @@ from app.indexer import indexer
 from app.logger import get_app_logger
 from app.ui import create_app, open_file, open_folder_for_file, get_stats
 from app.search import search_by_image
+from app.pipeline import repair_index_consistency
 
 
-def mount_routes(gradio_app):
-    fastapi_app = gradio_app.app
+def mount_routes(fastapi_app):
 
     @fastapi_app.get("/action/open_image")
     async def api_open_image(p: str = ""):
@@ -100,9 +100,9 @@ def main():
     logger.info("FaceSearch 启动")
     logger.info(f"数据目录: {config.data_dir}")
     logger.info(f"照片目录: {config.photo_root or '未设置'}")
+    repair_index_consistency()
 
     gradio_app = create_app()
-    mount_routes(gradio_app)
 
     host = config["runtime"]["host"]
     port = config["runtime"]["port"]
@@ -120,7 +120,7 @@ def main():
         threading.Thread(target=open_browser, daemon=True).start()
 
     logger.info(f"启动服务: http://{host}:{port}")
-    gradio_app.launch(
+    launched_app, _, _ = gradio_app.launch(
         server_name=host,
         server_port=port,
         quiet=False,
@@ -129,7 +129,13 @@ def main():
         share=False,
         theme="soft",
         max_file_size="50mb",
+        allowed_paths=[
+            str(config.data_dir),
+            str(config.photo_root) if config.photo_root else str(CURRENT_DIR),
+            str(CURRENT_DIR),
+        ],
     )
+    mount_routes(launched_app)
 
     try:
         while True:

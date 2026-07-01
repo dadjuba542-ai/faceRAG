@@ -13,6 +13,32 @@ from app.database import db
 from app.indexer import indexer
 
 
+def repair_index_consistency():
+    changed = False
+    orphan_faiss_ids = db.get_orphan_face_ids()
+    if orphan_faiss_ids:
+        indexer.remove(orphan_faiss_ids)
+        db.delete_faces_by_faiss_ids(orphan_faiss_ids)
+        changed = True
+
+    index_faiss_ids = set(indexer.get_all_ids())
+    db_faiss_ids = set(db.get_all_face_ids())
+    stale_index_ids = sorted(index_faiss_ids - db_faiss_ids)
+    if stale_index_ids:
+        indexer.remove(stale_index_ids)
+        changed = True
+
+    if changed:
+        indexer.save()
+
+
+def remove_existing_image_records(image_path: str):
+    old_faiss_ids = db.get_face_ids_by_image_path(image_path)
+    if old_faiss_ids:
+        indexer.remove(old_faiss_ids)
+    db.delete_image_and_faces(image_path)
+
+
 def process_single_image(image_path: str, progress_callback: Optional[Callable] = None) -> dict:
     logger = get_app_logger()
     idx_logger = get_indexing_logger()
@@ -31,16 +57,11 @@ def process_single_image(image_path: str, progress_callback: Optional[Callable] 
         return result
 
     height, width = img.shape[:2]
-
-    faces = face_detector.detect(img)
-    if not faces:
-        result["success"] = True
-        result["faces_count"] = 0
-        return result
-
     stat = os.stat(image_path)
     file_name = os.path.basename(image_path)
     folder_path = os.path.dirname(image_path)
+
+    remove_existing_image_records(image_path)
 
     image_id = db.insert_image(
         image_path=image_path,
@@ -53,6 +74,12 @@ def process_single_image(image_path: str, progress_callback: Optional[Callable] 
     )
     if image_id < 0:
         result["error"] = "数据库插入失败"
+        return result
+
+    faces = face_detector.detect(img)
+    if not faces:
+        result["success"] = True
+        result["faces_count"] = 0
         return result
 
     save_crop = config["thumbnail"]["save_crop"]
@@ -120,9 +147,14 @@ def full_index(photo_root: str, progress_callback: Optional[Callable] = None):
     logger = get_app_logger()
     idx_logger = get_indexing_logger()
 
+    repair_index_consistency()
     extensions = config["supported_extensions"]
     images = scan_directory(photo_root, extensions)
     total = len(images)
+    current_paths = {img.path for img in images}
+    for old_image in db.get_all_images():
+        if old_image["image_path"] not in current_paths:
+            remove_existing_image_records(old_image["image_path"])
     logger.info(f"开始建库: {photo_root}, 共 {total} 张图片")
 
     processed = 0
@@ -155,6 +187,7 @@ def incremental_index(photo_root: str, progress_callback: Optional[Callable] = N
     logger = get_app_logger()
     idx_logger = get_indexing_logger()
 
+    repair_index_consistency()
     extensions = config["supported_extensions"]
     current_images = scan_directory(photo_root, extensions)
     db_images = db.get_all_images()
@@ -168,8 +201,9 @@ def incremental_index(photo_root: str, progress_callback: Optional[Callable] = N
     )
 
     if deleted_paths:
-        db.mark_deleted_images(deleted_paths)
-        logger.info(f"标记 {len(deleted_paths)} 张缺失图片")
+        for path in deleted_paths:
+            remove_existing_image_records(path)
+        logger.info(f"移除 {len(deleted_paths)} 张已删除图片的索引记录")
 
     total_to_process = len(new_images) + len(changed_images)
     processed = 0

@@ -3,7 +3,9 @@ import platform
 import threading
 import time
 import uuid
+import json
 from pathlib import Path
+from urllib.parse import quote
 
 import cv2
 import gradio as gr
@@ -26,8 +28,7 @@ def open_file(path):
             import subprocess
             subprocess.run(["open", path], check=False)
         elif platform.system() == "Windows":
-            import subprocess
-            subprocess.run(["start", path], shell=True, check=False)
+            os.startfile(path)
         else:
             import subprocess
             subprocess.run(["xdg-open", path], check=False)
@@ -76,10 +77,51 @@ def select_directory(path):
     return "\n".join(lines)
 
 
-def run_full_index(progress=gr.Progress()):
-    if not config.photo_root or not os.path.isdir(config.photo_root):
+def choose_directory_dialog(current_path):
+    selected_path = current_path.strip() if current_path else config.photo_root
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        picked = filedialog.askdirectory(
+            initialdir=selected_path if selected_path and os.path.isdir(selected_path) else None,
+            title="选择照片目录",
+            mustexist=True,
+        )
+        root.destroy()
+    except Exception as e:
+        get_app_logger().error(f"打开目录选择框失败: {e}")
         lines, _ = get_stats()
-        yield "\n".join(lines), "请先设置有效的照片目录。"
+        return current_path or config.photo_root, "\n".join(lines), "打开目录选择框失败，请直接粘贴目录路径。"
+
+    if picked and os.path.isdir(picked):
+        config.photo_root = picked
+        lines, _ = get_stats()
+        return picked, "\n".join(lines), f"已选择目录：{picked}"
+
+    lines, _ = get_stats()
+    return current_path or config.photo_root, "\n".join(lines), "未选择新目录。"
+
+
+def resolve_photo_root(path_input):
+    if path_input:
+        path_input = path_input.strip()
+    if path_input and os.path.isdir(path_input):
+        config.photo_root = path_input
+        return config.photo_root, None
+    if config.photo_root and os.path.isdir(config.photo_root):
+        return config.photo_root, None
+    return "", "请先设置有效的照片目录。"
+
+
+def run_full_index(path_input, progress=gr.Progress()):
+    photo_root, error = resolve_photo_root(path_input)
+    if error:
+        lines, _ = get_stats()
+        yield "\n".join(lines), error
         return
 
     progress(0, desc="正在扫描图片...")
@@ -100,16 +142,17 @@ def run_full_index(progress=gr.Progress()):
         else:
             status_text = f"处理中... 已检测人脸: {total_faces}"
 
-    full_index(config.photo_root, update_progress)
+    full_index(photo_root, update_progress)
     progress(1.0, desc="建库完成")
     lines, _ = get_stats()
     yield "\n".join(lines), "建库完成！"
 
 
-def run_incremental_index(progress=gr.Progress()):
-    if not config.photo_root or not os.path.isdir(config.photo_root):
+def run_incremental_index(path_input, progress=gr.Progress()):
+    photo_root, error = resolve_photo_root(path_input)
+    if error:
         lines, _ = get_stats()
-        yield "\n".join(lines), "请先设置有效的照片目录。"
+        yield "\n".join(lines), error
         return
 
     progress(0, desc="正在扫描变更...")
@@ -119,16 +162,17 @@ def run_incremental_index(progress=gr.Progress()):
             pct = processed / total
             progress(pct, desc=f"增量更新: {processed}/{total}")
 
-    incremental_index(config.photo_root, update_progress)
+    incremental_index(photo_root, update_progress)
     progress(1.0, desc="增量更新完成")
     lines, _ = get_stats()
     yield "\n".join(lines), "增量更新完成！"
 
 
-def run_rebuild_index(progress=gr.Progress()):
-    if not config.photo_root or not os.path.isdir(config.photo_root):
+def run_rebuild_index(path_input, progress=gr.Progress()):
+    photo_root, error = resolve_photo_root(path_input)
+    if error:
         lines, _ = get_stats()
-        yield "\n".join(lines), "请先设置有效的照片目录。"
+        yield "\n".join(lines), error
         return
 
     progress(0, desc="正在重建...")
@@ -138,7 +182,7 @@ def run_rebuild_index(progress=gr.Progress()):
             pct = processed / total
             progress(pct, desc=f"重建中: {processed}/{total}")
 
-    rebuild_index(config.photo_root, update_progress)
+    rebuild_index(photo_root, update_progress)
     progress(1.0, desc="重建完成")
     lines, _ = get_stats()
     yield "\n".join(lines), "重建完成！"
@@ -230,9 +274,9 @@ def run_search(query_path, selected_face, top_k, threshold):
         if not r["image_exists"]:
             exists_note = '<span style="color:#d32f2f;margin-left:8px;font-size:12px;">原图不存在</span>'
 
-        escaped_path = r["image_path"].replace("\\", "\\\\").replace("'", "\\'")
+        escaped_path = json.dumps(r["image_path"], ensure_ascii=False)
         bbox_str = ",".join(str(b) for b in r["bbox"])
-        view_url = f"/view_image?path={escaped_path}&bbox={bbox_str}"
+        view_url = f"/view_image?path={quote(r['image_path'])}&bbox={bbox_str}"
 
         html_parts.append(f"""
         <div style="display:flex;align-items:center;gap:14px;padding:12px;
@@ -248,11 +292,17 @@ def run_search(query_path, selected_face, top_k, threshold):
                 {exists_note}
             </div>
             <div style="display:flex;gap:4px;flex-wrap:wrap;min-width:180px;">
-                <button onclick="fetch('/action/open_image?p='+encodeURIComponent('{escaped_path}'))"
+                <button onclick='fetch("/action/open_image?p="+encodeURIComponent({escaped_path}))
+                        .then(r => r.json())
+                        .then(data => {{ if (!data.ok) alert(data.error || "打开原图失败"); }})
+                        .catch(() => alert("打开原图失败"))'
                         style="padding:5px 10px;font-size:12px;cursor:pointer;
                                border:1px solid #ccc;border-radius:4px;background:#fff;
                                white-space:nowrap;">打开原图</button>
-                <button onclick="fetch('/action/open_folder?p='+encodeURIComponent('{escaped_path}'))"
+                <button onclick='fetch("/action/open_folder?p="+encodeURIComponent({escaped_path}))
+                        .then(r => r.json())
+                        .then(data => {{ if (!data.ok) alert(data.error || "打开文件夹失败"); }})
+                        .catch(() => alert("打开文件夹失败"))'
                         style="padding:5px 10px;font-size:12px;cursor:pointer;
                                border:1px solid #ccc;border-radius:4px;background:#fff;
                                white-space:nowrap;">打开文件夹</button>
@@ -295,12 +345,14 @@ def create_app():
 
                 index_btn.click(
                     fn=run_full_index,
+                    inputs=[dir_input],
                     outputs=[stats_md, status_output],
                     concurrency_limit=1,
                     api_name="run_full_index",
                 )
                 incremental_btn.click(
                     fn=run_incremental_index,
+                    inputs=[dir_input],
                     outputs=[stats_md, status_output],
                     concurrency_limit=1,
                     api_name="run_incremental_index",
@@ -317,15 +369,16 @@ def create_app():
                     """,
                 ).success(
                     fn=run_rebuild_index,
+                    inputs=[dir_input],
                     outputs=[stats_md, status_output],
                     concurrency_limit=1,
                     api_name="run_rebuild_index",
                 )
                 select_dir_btn.click(
-                    fn=select_directory,
+                    fn=choose_directory_dialog,
                     inputs=dir_input,
-                    outputs=[stats_md],
-                    api_name="select_directory",
+                    outputs=[dir_input, stats_md, status_output],
+                    api_name="choose_directory_dialog",
                 )
                 refresh_stats_btn.click(
                     fn=lambda: "\n".join(get_stats()[0]),
