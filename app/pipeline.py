@@ -152,7 +152,7 @@ def full_index(photo_root: str, progress_callback: Optional[Callable] = None):
     images = scan_directory(photo_root, extensions)
     total = len(images)
     current_paths = {img.path for img in images}
-    for old_image in db.get_all_images():
+    for old_image in db.get_images_under_root(photo_root):
         if old_image["image_path"] not in current_paths:
             remove_existing_image_records(old_image["image_path"])
     logger.info(f"开始建库: {photo_root}, 共 {total} 张图片")
@@ -190,7 +190,7 @@ def incremental_index(photo_root: str, progress_callback: Optional[Callable] = N
     repair_index_consistency()
     extensions = config["supported_extensions"]
     current_images = scan_directory(photo_root, extensions)
-    db_images = db.get_all_images()
+    db_images = db.get_images_under_root(photo_root)
 
     new_images, changed_images, deleted_paths = get_changed_images(current_images, db_images)
 

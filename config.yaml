@@ -1,4 +1,10 @@
 face_detection:
+  aggressive_retry:
+    det_size: 1024
+    detection_threshold: 0.3
+    enabled: true
+    min_face_size: 32
+    run_on_no_face_only: true
   detection_threshold: 0.5
   enable_quality_filter: true
   min_face_size: 60
@@ -7,7 +13,7 @@ index:
   faiss_index_path: data/faiss.index
   similarity_threshold: 0.35
   top_k_default: 50
-photo_root: ""
+photo_root: /Users/test/Downloads/资料/巴厘岛
 runtime:
   auto_open_browser: true
   host: 127.0.0.1

@@ -4,8 +4,10 @@ import threading
 import time
 import uuid
 import json
+import shutil
 from pathlib import Path
 from urllib.parse import quote
+from datetime import datetime
 
 import cv2
 import gradio as gr
@@ -237,22 +239,22 @@ def on_face_select(evt: gr.SelectData, face_data_state):
 
 def run_search(query_path, selected_face, top_k, threshold):
     if not query_path or not os.path.exists(query_path):
-        return "请先上传查询图片。"
+        return "请先上传查询图片。", [], "请先完成搜索后再打包。"
     if not selected_face:
-        return "请选择要搜索的人脸。"
+        return "请选择要搜索的人脸。", [], "请先完成搜索后再打包。"
 
     face_idx = selected_face.get("index", 0)
     faces = detect_query_faces(query_path)
     if not faces or face_idx >= len(faces):
-        return "未检测到清晰人脸，请上传更清晰的人脸照片。"
+        return "未检测到清晰人脸，请上传更清晰的人脸照片。", [], "请先完成搜索后再打包。"
 
     result = search_by_face(faces[face_idx], top_k=int(top_k), threshold=float(threshold))
     if "error" in result:
-        return result["error"]
+        return result["error"], [], "请先完成搜索后再打包。"
 
     results = result.get("results", [])
     if not results:
-        return "未找到匹配结果。"
+        return "未找到匹配结果。", [], "没有可打包的搜索结果。"
 
     html_parts = [
         f'<div style="margin-bottom:10px;font-size:13px;color:#666;">'
@@ -314,7 +316,57 @@ def run_search(query_path, selected_face, top_k, threshold):
         </div>
         """)
 
-    return "".join(html_parts)
+    return "".join(html_parts), results, f"可打包 {len(results)} 条搜索结果。"
+
+
+def package_search_results(search_results):
+    if not search_results:
+        return "请先完成一次搜索，再执行打包。"
+
+    export_root = config.data_dir / "exports"
+    export_root.mkdir(parents=True, exist_ok=True)
+    export_dir = export_root / f"search_pack_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    copied = 0
+    skipped = 0
+    seen_paths = set()
+    manifest_lines = []
+
+    for item in search_results:
+        image_path = item.get("image_path", "")
+        if not image_path or image_path in seen_paths:
+            continue
+        seen_paths.add(image_path)
+        if not os.path.exists(image_path):
+            skipped += 1
+            continue
+
+        src_path = Path(image_path)
+        safe_name = f"{item['rank']:03d}_{src_path.name}"
+        target_path = export_dir / safe_name
+        dedupe_index = 1
+        while target_path.exists():
+            target_path = export_dir / f"{item['rank']:03d}_{dedupe_index}_{src_path.name}"
+            dedupe_index += 1
+
+        shutil.copy2(src_path, target_path)
+        copied += 1
+        manifest_lines.append(
+            f"{item['rank']}\t{item['similarity']}\t{src_path}\t{target_path.name}"
+        )
+
+    manifest_path = export_dir / "manifest.tsv"
+    manifest_path.write_text(
+        "rank\tsimilarity\tsource_path\texport_name\n" + "\n".join(manifest_lines),
+        encoding="utf-8",
+    )
+
+    open_file(str(export_dir))
+    return (
+        f"打包完成：复制 {copied} 张图片到 {export_dir}"
+        + (f"；跳过 {skipped} 张不存在的原图。" if skipped else "。")
+    )
 
 
 def create_app():
@@ -358,16 +410,6 @@ def create_app():
                     api_name="run_incremental_index",
                 )
                 rebuild_btn.click(
-                    fn=None,
-                    js="""
-                    () => {
-                        if (confirm('重新建库会清空当前索引和数据库，但不会删除原始照片。是否继续？')) {
-                            return 'rebuild';
-                        }
-                        return null;
-                    }
-                    """,
-                ).success(
                     fn=run_rebuild_index,
                     inputs=[dir_input],
                     outputs=[stats_md, status_output],
@@ -424,13 +466,16 @@ def create_app():
                             )
                         with gr.Row():
                             search_btn = gr.Button("开始搜索", variant="primary", size="lg")
+                            package_btn = gr.Button("一键打包结果", variant="secondary")
 
                         results_html = gr.HTML(label="搜索结果")
+                        search_results_state = gr.State([])
+                        package_status = gr.Textbox(label="打包状态", lines=2, value="请先完成一次搜索。")
 
                 query_image.change(
-                    fn=on_upload_query,
+                    fn=lambda image: (*on_upload_query(image), [], "请先完成一次搜索。"),
                     inputs=query_image,
-                    outputs=[face_gallery, selected_face_state, query_path_state, results_html],
+                    outputs=[face_gallery, selected_face_state, query_path_state, results_html, search_results_state, package_status],
                     api_name="on_upload_query",
                 )
 
@@ -444,9 +489,17 @@ def create_app():
                 search_btn.click(
                     fn=run_search,
                     inputs=[query_path_state, selected_face_state, top_k_input, threshold_input],
-                    outputs=results_html,
+                    outputs=[results_html, search_results_state, package_status],
                     concurrency_limit=1,
                     api_name="run_search",
+                )
+
+                package_btn.click(
+                    fn=package_search_results,
+                    inputs=[search_results_state],
+                    outputs=[package_status],
+                    concurrency_limit=1,
+                    api_name="package_search_results",
                 )
 
             with gr.TabItem("日志", id=2):

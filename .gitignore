@@ -10,6 +10,7 @@ data/temp/*
 data/*.index
 data/*.db
 data/logs/*
+data/exports/*
 !data/face_crops/.gitkeep
 !data/temp/.gitkeep
 !data/logs/.gitkeep

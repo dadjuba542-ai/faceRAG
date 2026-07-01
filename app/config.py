@@ -18,6 +18,13 @@ DEFAULT_CONFIG = {
         "min_face_size": 60,
         "detection_threshold": 0.5,
         "enable_quality_filter": True,
+        "aggressive_retry": {
+            "enabled": True,
+            "min_face_size": 32,
+            "detection_threshold": 0.3,
+            "det_size": 1024,
+            "run_on_no_face_only": True,
+        },
     },
     "thumbnail": {
         "save_crop": True,

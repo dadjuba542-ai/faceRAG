@@ -1,5 +1,6 @@
 import sqlite3
 import time
+import os
 from pathlib import Path
 from typing import List, Optional, Dict
 
@@ -104,6 +105,18 @@ class Database:
         rows = conn.execute("SELECT * FROM images WHERE status='active'").fetchall()
         conn.close()
         return [dict(r) for r in rows]
+
+    def get_images_under_root(self, root_path: str) -> List[Dict]:
+        root_abs = os.path.abspath(root_path)
+        scoped_images = []
+        for row in self.get_all_images():
+            image_path = os.path.abspath(row["image_path"])
+            try:
+                if os.path.commonpath([root_abs, image_path]) == root_abs:
+                    scoped_images.append(row)
+            except ValueError:
+                continue
+        return scoped_images
 
     def get_image_by_path(self, image_path: str) -> Optional[Dict]:
         conn = self._conn()
