@@ -11,6 +11,7 @@ from app.detector import face_detector
 from app.embedding import get_embedding
 from app.database import db
 from app.indexer import indexer
+from app.image_io import read_image
 
 
 def repair_index_consistency():
@@ -49,7 +50,7 @@ def process_single_image(image_path: str, progress_callback: Optional[Callable] 
         "error": None,
     }
 
-    img = cv2.imread(image_path)
+    img = read_image(image_path)
     if img is None:
         result["error"] = "无法读取图片"
         db.insert_failed_image(image_path, "无法读取图片")

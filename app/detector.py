@@ -7,6 +7,7 @@ import insightface
 from insightface.app import FaceAnalysis
 
 from app.config import config
+from app.image_io import read_image
 from app.logger import get_app_logger
 
 
@@ -169,7 +170,7 @@ class FaceDetector:
         return self._merge_faces(conservative_faces, aggressive_faces)
 
     def detect_from_path(self, image_path: str) -> List[dict]:
-        img = cv2.imread(image_path)
+        img = read_image(image_path)
         if img is None:
             return []
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)

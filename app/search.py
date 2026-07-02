@@ -10,6 +10,7 @@ from app.embedding import get_embedding
 from app.database import db
 from app.indexer import indexer
 from app.logger import get_app_logger
+from app.image_io import read_image
 
 
 def search_by_face(face_result: dict, top_k: int = 50, threshold: float = 0.35) -> dict:
@@ -65,7 +66,7 @@ def search_by_face(face_result: dict, top_k: int = 50, threshold: float = 0.35) 
 
 
 def detect_query_faces(image_path: str) -> List[dict]:
-    img = cv2.imread(image_path)
+    img = read_image(image_path)
     if img is None:
         return []
     faces = face_detector.detect(img)

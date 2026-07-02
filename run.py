@@ -26,6 +26,7 @@ from app.logger import get_app_logger
 from app.ui import create_app, open_file, open_folder_for_file, get_stats
 from app.search import search_by_image
 from app.pipeline import repair_index_consistency
+from app.image_io import read_image
 
 
 def mount_routes(fastapi_app):
@@ -52,7 +53,7 @@ def mount_routes(fastapi_app):
             return HTMLResponse("<h3>原图不存在</h3>")
 
         import cv2
-        img = cv2.imread(path)
+        img = read_image(path)
         if img is None:
             return HTMLResponse("<h3>无法读取图片</h3>")
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)

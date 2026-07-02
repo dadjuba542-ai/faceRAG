@@ -20,6 +20,7 @@ from app.indexer import indexer
 from app.search import detect_query_faces, search_by_face
 from app.pipeline import full_index, incremental_index, rebuild_index
 from app.logger import get_app_logger
+from app.image_io import read_image
 
 CURRENT_DIR = Path(__file__).resolve().parent
 
@@ -212,7 +213,7 @@ def on_upload_query(image):
         x1, y1, x2, y2 = bbox
         h, w = image.shape[:2] if isinstance(image, np.ndarray) else (0, 0)
         if h == 0:
-            img_cv = cv2.imread(temp_path)
+            img_cv = read_image(temp_path)
             if img_cv is not None:
                 h, w = img_cv.shape[:2]
         x1, y1 = max(0, x1), max(0, y1)
@@ -220,7 +221,7 @@ def on_upload_query(image):
         if isinstance(image, np.ndarray):
             crop = image[y1:y2, x1:x2]
         else:
-            img_cv = cv2.imread(temp_path)
+            img_cv = read_image(temp_path)
             img_rgb = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
             crop = img_rgb[y1:y2, x1:x2]
         if crop.size > 0:
